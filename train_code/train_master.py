@@ -34,7 +34,8 @@ from scripts.generate_lr_esr import generate_low_res_esr
 
 # Mixed precision training
 scaler = torch.cuda.amp.GradScaler()
-
+student_scaler = torch.cuda.amp.GradScaler()
+teacher_scaler = torch.cuda.amp.GradScaler()
 class train_master(object):
     def __init__(self, options, args, model_name, has_discriminator=False) -> None:
         # General specs setup
@@ -51,13 +52,20 @@ class train_master(object):
 
         # Optimizer 
         self.learning_rate = options['start_learning_rate']
-        self.optimizer_g = torch.optim.Adam(self.generator.parameters(), lr=self.learning_rate, betas=(options["adam_beta1"], options["adam_beta2"]))
+        if self.model_name != 'distill':
+            self.optimizer_g = torch.optim.Adam(self.generator.parameters(), lr=self.learning_rate, betas=(options["adam_beta1"], options["adam_beta2"]))
+        else:
+            self.student_optimizer_g = torch.optim.Adam(self.student_generator.parameters(), lr=self.learning_rate, betas=(options["adam_beta1"], options["adam_beta2"]))
+            self.teacher_optimizer_g = torch.optim.Adam(self.teacher_generator.parameters(), lr=self.learning_rate, betas=(options["adam_beta1"], options["adam_beta2"]))
         if self.has_discriminator:
             self.optimizer_d = torch.optim.Adam(self.discriminator.parameters(), lr=self.learning_rate, betas=(self.options["adam_beta1"], self.options["adam_beta2"]))
 
         # Train specs
         self.start_iteration = 0
         self.lowest_generator_loss = float("inf")
+
+        self.lowest_student_generator_loss = float("inf")
+        self.lowest_teacher_generator_loss = float("inf")
 
         # Other auxiliary function
         self.writer = SummaryWriter() 
@@ -84,24 +92,45 @@ class train_master(object):
                 self.learning_rate = self.learning_rate * self.options['decay_gamma']     # should be divisible in all cases
 
         # Change the learning rate to our target
-        for param_group in self.optimizer_g.param_groups:
-            param_group['lr'] = self.learning_rate
+        if self.model_name == 'distill':
+            for param_group in self.student_optimizer_g.param_groups:
+                param_group['lr'] = self.learning_rate
+            for param_group in self.teacher_optimizer_g.param_groups:
+                param_group['lr'] = self.learning_rate
+        else:
+            for param_group in self.optimizer_g.param_groups:
+                param_group['lr'] = self.learning_rate
         
         if self.has_discriminator:
             # print("We didn't yet handle discriminator, but we think that it should be necessary")
             for param_group in self.optimizer_d.param_groups:
                 param_group['lr'] = self.learning_rate
+        if self.model_name == 'distill':
+            assert(self.learning_rate == self.student_optimizer_g.param_groups[0]['lr'])
+            assert(self.learning_rate == self.teacher_optimizer_g.param_groups[0]['lr'])
+        else:
+            assert(self.learning_rate == self.optimizer_g.param_groups[0]['lr'])
 
-        assert(self.learning_rate == self.optimizer_g.param_groups[0]['lr'])
 
 
     def pixel_loss_load(self):
-        if self.options['pixel_loss'] == "L1":
-            self.cri_pix = PixelLoss().cuda()
-        elif self.options['pixel_loss'] == "L1_Charbonnier":
-            self.cri_pix = L1_Charbonnier_loss().cuda()
+        if self.model_name == "distill":
+            if self.options['pixel_loss'] == "L1":
+                self.student_cri_pix = PixelLoss().cuda()
+                self.teacher_cri_pix = PixelLoss().cuda()
+            elif self.options['pixel_loss'] == "L1_Charbonnier":
+                self.student_cri_pix = L1_Charbonnier_loss().cuda()
+                self.teacher_cri_pix = L1_Charbonnier_loss().cuda()
+            self.student_cri_distill = PixelLoss().cuda()
+            print("For cri_pix, we use {} loss, for cri_distill we use L1 loss.".format(
+              self.options['pixel_loss']))
+        else:
+            if self.options['pixel_loss'] == "L1":
+                self.cri_pix = PixelLoss().cuda()
+            elif self.options['pixel_loss'] == "L1_Charbonnier":
+                self.cri_pix = L1_Charbonnier_loss().cuda()
 
-        print("We are using {} loss".format(self.options['pixel_loss']))
+            print("We are using {} loss".format(self.options['pixel_loss']))
         
 
     def GAN_loss_load(self):
@@ -123,6 +152,10 @@ class train_master(object):
     def tensorboard_epoch_draw(self, epoch_loss, epoch):
         self.writer.add_scalar('Loss/train-Loss-Epoch', epoch_loss, epoch)
 
+    def tensorboard_epoch_draw_distill(self, student_epoch_loss, teacher_epoch_loss, epoch):
+        self.writer.add_scalar('Loss/train-Student-Loss-Epoch', student_epoch_loss, epoch)
+        self.writer.add_scalar('Loss/train-Teacher-Loss-Epoch', teacher_epoch_loss, epoch)
+
 
     def master_run(self):
         torch.backends.cudnn.benchmark = True
@@ -140,10 +173,17 @@ class train_master(object):
 
 
         # Check if we need to load weight
-        if self.args.auto_resume_best or self.args.auto_resume_closest:
-            self.load_weight(self.model_name)
-        elif self.args.pretrained_path != "":   # If we give a pretrained path, we will use it (Should have in GAN training which uses pretrained L1 loss Network)
-            self.load_pretrained(self.model_name)
+        if self.model_name == 'distill':
+            if self.args.auto_resume_best or self.args.auto_resume_closest:
+                self.load_weight_distill(self.model_name)
+            elif self.args.pretrained_teacher_path != "" and self.args.pretrained_student_path != "":
+                self.load_pretrained_student(self.model_name)
+                self.load_pretrained_teacher(self.model_name)
+        else:
+            if self.args.auto_resume_best or self.args.auto_resume_closest:
+                self.load_weight(self.model_name)
+            elif self.args.pretrained_path != "":   # If we give a pretrained path, we will use it (Should have in GAN training which uses pretrained L1 loss Network)
+                self.load_pretrained(self.model_name)
 
         # Start iterating the epochs 
         start_epoch = self.start_iteration // math.ceil(dataset_length / self.options['train_batch_size'])
@@ -153,7 +193,9 @@ class train_master(object):
         self.adjust_learning_rate(iteration_idx)        # adjust the learning rate to the desired one at the beginning
 
         for epoch in range(start_epoch, n_epochs):
-            print("This is epoch {} and the start iteration is {} with learning rate {}".format(epoch, iteration_idx, self.optimizer_g.param_groups[0]['lr']))
+            print("This is epoch {} and the start iteration is {} with learning rate {}".format(
+              epoch, iteration_idx, (self.optimizer_g.param_groups[0]['lr'] if self.model_name != 'distill'
+              else self.student_optimizer_g.param_groups[0]['lr'])))
 
             # Generate new lr degradation image
             if epoch != start_epoch and epoch % self.options['degradate_generation_freq'] == 0:
@@ -161,7 +203,13 @@ class train_master(object):
 
             # Batch training
             loss_per_epoch = 0.0
-            self.generator.train()
+            student_loss_per_epoch = 0.0
+            teacher_loss_per_epoch = 0.0
+            if self.model_name == 'distill':
+                self.student_generator.train()
+                self.teacher_generator.train()
+            else:
+                self.generator.train()
             tqdm_bar = tqdm(train_dataloader, total=len(train_dataloader))
             for batch_idx, imgs in enumerate(tqdm_bar):
 
@@ -170,41 +218,71 @@ class train_master(object):
                 imgs_hr = imgs["hr"].cuda()
 
                 # Used for each iteration
-                self.generator_loss = 0
+                if self.model_name == 'distill':
+                    self.student_generator_loss = 0
+                    self.teacher_generator_loss = 0
+                else:
+                    self.generator_loss = 0
                 self.single_iteration(imgs_lr, imgs_degrade_hr, imgs_hr)
                 
                 # tensorboard and updates
                 self.tensorboard_report(iteration_idx)
-                loss_per_epoch += self.generator_loss.item()
+                if self.model_name == 'distill':
+                    student_loss_per_epoch += self.student_generator_loss.item()
+                    teacher_loss_per_epoch += self.teacher_generator_loss.item()
+                else:
+                    loss_per_epoch += self.generator_loss.item()
                 
                 ################################# Save model weights and update hyperparameter ########################################
-                if self.lowest_generator_loss >= self.generator_loss.item():
-                    self.lowest_generator_loss = self.generator_loss.item()
-                    print("\nSave model with the lowest generator_loss among all iteartions ", self.lowest_generator_loss)
+                if self.model_name == 'distill':
+                    if self.lowest_student_generator_loss >= self.student_generator_loss:
+                        self.lowest_student_generator_loss = self.student_generator_loss
+                        print("\nSave model with the lowest student_generator_loss among all iterations ", self.lowest_student_generator_loss)
+                        self.save_weight_student(iteration_idx, self.model_name+"_RRDB_best", self.options)
+                        self.lowest_student_tensorboard_report(iteration_idx)
+                    if self.lowest_teacher_generator_loss >= self.teacher_generator_loss:
+                        self.lowest_teacher_generator_loss = self.teacher_generator_loss
+                        print("\nSave model with the lowest teacher_generator_loss among all iterations ", self.lowest_teacher_generator_loss)
+                        self.save_weight_teacher(iteration_idx, self.model_name+"_DAT_best", self.options)
+                        self.lowest_student_tensorboard_report(iteration_idx)
+                else:
+                    if self.lowest_generator_loss >= self.generator_loss.item():
+                        self.lowest_generator_loss = self.generator_loss.item()
+                        print("\nSave model with the lowest generator_loss among all iteartions ", self.lowest_generator_loss)
 
-                    # Store the best
-                    self.save_weight(iteration_idx, self.model_name+"_best", self.options)
+                        # Store the best
+                        self.save_weight(iteration_idx, self.model_name+"_best", self.options)
 
-                    self.lowest_tensorboard_report(iteration_idx)
+                        self.lowest_tensorboard_report(iteration_idx)
    
                 # Update iteration and learning rate
                 iteration_idx += 1
                 self.batch_idx = iteration_idx
                 if iteration_idx % self.options['decay_iteration'] == 0:
                     self.adjust_learning_rate(iteration_idx)    # adjust the learning rate to the desired one
-                    print("Update the learning rate to {} at iteration {} ".format(self.optimizer_g.param_groups[0]['lr'], iteration_idx))
+                    if self.model_name == 'distill':
+                        print("Update the student learning rate to {} at iteration {} ".format(self.student_optimizer_g.param_groups[0]['lr'], iteration_idx))
+                        print("Update the teacher learning rate to {} at iteration {} ".format(self.teacher_optimizer_g.param_groups[0]['lr'], iteration_idx))
+                    else:
+                        print("Update the learning rate to {} at iteration {} ".format(self.optimizer_g.param_groups[0]['lr'], iteration_idx))
 
                 # Don't clean any memory here, it will dramatically slow down the code
                 
             # Per epoch report
-            self.tensorboard_epoch_draw( loss_per_epoch/batch_idx, epoch)
-            
-
-            # Per epoch store weight
-            self.save_weight(iteration_idx, self.model_name+"_closest", self.options)
-            # Backup Checkpoint (Per 50 epoch)
-            if epoch % self.options['checkpoints_freq'] == 0 or epoch == n_epochs-1:
-                self.save_weight(iteration_idx, "checkpoints/" + self.model_name + "_epoch_" + str(epoch), self.options)
+            if self.model_name == 'distill':
+                self.tensorboard_epoch_draw_distill(student_loss_per_epoch, teacher_loss_per_epoch, epoch)
+                self.save_weight_student(iteration_idx, self.model_name+"_RRDB_closest", self.options)
+                self.save_weight_teacher(iteration_idx, self.model_name+"_DAT_closest", self.options)
+                if epoch % self.options['checkpoints_freq'] == 0 or epoch == n_epochs-1:
+                    self.save_weight_student(iteration_idx, "checkpoints/" + self.model_name+"_student_epoch_" + str(epoch), self.options)
+                    self.save_weight_teacher(iteration_idx, "checkpoints/" + self.model_name+"_teacher_epoch_" + str(epoch), self.options)
+            else:
+                self.tensorboard_epoch_draw( loss_per_epoch/batch_idx, epoch)
+                # Per epoch store weight
+                self.save_weight(iteration_idx, self.model_name+"_closest", self.options)
+                # Backup Checkpoint (Per 50 epoch)
+                if epoch % self.options['checkpoints_freq'] == 0 or epoch == n_epochs-1:
+                    self.save_weight(iteration_idx, "checkpoints/" + self.model_name + "_epoch_" + str(epoch), self.options)
 
 
             # Clean unneeded GPU cache (since we use subprocess for generate_lr(), so we need to kill them all)
@@ -216,24 +294,42 @@ class train_master(object):
     def single_iteration(self, imgs_lr, imgs_degrade_hr, imgs_hr):
 
         ############################################# Generator section ##################################################
-        self.optimizer_g.zero_grad()
+        if self.model_name == 'distill':
+            self.student_optimizer_g.zero_grad()
+            self.teacher_optimizer_g.zero_grad()
+        else:
+            self.optimizer_g.zero_grad()
         if self.has_discriminator:
             for p in self.discriminator.parameters():
                 p.requires_grad = False
 
         with torch.cuda.amp.autocast():
             # generate high res image
-            gen_hr = self.generator(imgs_lr)
+            if self.model_name == 'distill':
+                student_gen_hr = self.student_generator(imgs_lr)
+                teacher_gen_hr = self.teacher_generator(imgs_lr)
+                self.calculate_loss(student_gen_hr, teacher_gen_hr, imgs_hr)
+            else:
+                gen_hr = self.generator(imgs_lr)
+                self.calculate_loss(gen_hr, imgs_hr)
 
             # all distinct loss will be stored in self.weight_store (per iteration)
-            self.calculate_loss(gen_hr, imgs_hr)
+            #self.calculate_loss(gen_hr, imgs_hr)
 
         # backward needed loss
         # self.loss_generator_total.backward()
         # self.optimizer_g.step()
-        scaler.scale(self.generator_loss).backward()  # loss backward
-        scaler.step(self.optimizer_g)
-        scaler.update()
+        if self.model_name == 'distill':
+            student_scaler.scale(self.student_generator_loss).backward(retain_graph=True)
+            student_scaler.step(self.student_optimizer_g)
+            student_scaler.update()
+            teacher_scaler.scale(self.teacher_generator_loss).backward()
+            teacher_scaler.step(self.teacher_optimizer_g)
+            teacher_scaler.update()
+        else:
+            scaler.scale(self.generator_loss).backward()  # loss backward
+            scaler.step(self.optimizer_g)
+            scaler.update()
         ###################################################################################################################
 
     
@@ -281,7 +377,43 @@ class train_master(object):
             raise NotImplementedError("We didn't cannot locate the weight of thie pretrained weight")
         
         print(f"We will use pretrained "+name+" weight!")
+
+    def load_pretrained_student(self, name):
+        # This part will load student_generator weight here, and it doesn't need to 
+        # important, since we must delete layer here cause the model layer does not match with weights.
         
+        weight_dir = self.args.pretrained_student_path
+        if not os.path.exists(weight_dir):
+            print("No such pretrained "+weight_dir+" file exists! We end the program! Please check the dir!")
+            os._exit(0)
+        
+        checkpoint_g = torch.load(weight_dir)
+        if 'model_state_dict' in checkpoint_g:
+            self.student_generator.load_state_dict(checkpoint_g['model_state_dict'])
+        elif 'params_ema' in checkpoint_g:
+            self.student_generator.load_state_dict(checkpoint_g['params_ema'])
+        else:
+            raise NotImplementedError("We didn't cannot locate the weight of thie pretrained weight")
+        
+        print(f"We will use pretrained "+name+" RRDB as teacher weight!")
+    
+    def load_pretrained_teacher(self, name):
+        # This part will load teacher_generator weight here, and it doesn't need to 
+
+        weight_dir = self.args.pretrained_teacher_path
+        if not os.path.exists(weight_dir):
+            print("No such pretrained "+weight_dir+" file exists! We end the program! Please check the dir!")
+            os._exit(0)
+        
+        checkpoint_g = torch.load(weight_dir)
+        if 'model_state_dict' in checkpoint_g:
+            self.teacher_generator.load_state_dict(checkpoint_g['model_state_dict'])
+        elif 'params_ema' in checkpoint_g:
+            self.teacher_generator.load_state_dict(checkpoint_g['params_ema'])
+        else:
+            raise NotImplementedError("We didn't cannot locate the weight of thie pretrained weight")
+        
+        print(f"We will use pretrained "+name+" DAT as teacher weight!")    
 
     def load_weight(self, head_prefix):
         # Resume best or the closest weight available
@@ -317,7 +449,67 @@ class train_master(object):
 
         print(f"We will start from the iteration {self.start_iteration}")
 
+    def load_weight_distill(self, head_prefix):
+        # Resume best or the closest weight available
+        student_head = head_prefix+"_RRDB_best" if self.args.auto_resume_best else head_prefix+"_RRDB_closest"
+        teacher_head = head_prefix+"_DAT_best" if self.args.auto_resume_best else head_prefix+"_DAT_closest"
+        if os.path.exists("saved_models/"+student_head+"_generator.pth"):
+            print("We need to resume previous " + student_head + " weight")
 
+            # Generator
+            checkpoint_g = torch.load("saved_models/"+student_head+"_generator.pth")
+            self.student_generator.load_state_dict(checkpoint_g['model_state_dict'])
+            self.student_optimizer_g.load_state_dict(checkpoint_g['optimizer_state_dict'])
+
+            # Discriminator, not suppose to be used
+            if self.has_discriminator:
+                assert True, "Opps, not supposed to happen"
+                checkpoint_d = torch.load("saved_models/"+student_head+"_discriminator.pth")
+                self.discriminator.load_state_dict(checkpoint_d['model_state_dict'])
+                self.optimizer_d.load_state_dict(checkpoint_d['optimizer_state_dict'])
+                assert(checkpoint_g['iteration'] == checkpoint_d['iteration']) # must be the same for iteration in generator and discriminator
+
+            self.start_iteration = checkpoint_g['iteration'] + 1
+            
+            # Prepare lowest generator
+            if os.path.exists("saved_models/" + head_prefix + "_RRDB_best_generator.pth"):
+                checkpoint_g = torch.load("saved_models/" + head_prefix + "_RRDB_best_generator.pth") # load generator weight
+            else:
+                print("There is no best weight exists!")
+            self.lowest_student_generator_loss = min(self.lowest_student_generator_loss, checkpoint_g["lowest_student_generator_weight"] )
+            print("The lowest student generator loss at the beginning is ", self.lowest_student_generator_loss)
+        else:
+            print(f"No saved_models/"+student_head+"_generator.pth " or " saved_models/"+student_head+"_discriminator.pth exists")
+
+        if os.path.exists("saved_models/"+teacher_head+"_generator.pth"):
+            print("We need to resume previous " + teacher_head + " weight")
+
+            # Generator
+            checkpoint_g = torch.load("saved_models/"+teacher_head+"_generator.pth")
+            self.teacher_generator.load_state_dict(checkpoint_g['model_state_dict'])
+            self.teacher_optimizer_g.load_state_dict(checkpoint_g['optimizer_state_dict'])
+
+            # Discriminator, not suppose to be used
+            if self.has_discriminator:
+                assert True, "Opps, not supposed to happen"
+                checkpoint_d = torch.load("saved_models/"+teacher_head+"_discriminator.pth")
+                self.discriminator.load_state_dict(checkpoint_d['model_state_dict'])
+                self.optimizer_d.load_state_dict(checkpoint_d['optimizer_state_dict'])
+                assert(checkpoint_g['iteration'] == checkpoint_d['iteration']) # must be the same for iteration in generator and discriminator
+
+            self.start_iteration = checkpoint_g['iteration'] + 1
+            
+            # Prepare lowest generator
+            if os.path.exists("saved_models/" + head_prefix + "_DAT_best_generator.pth"):
+                checkpoint_g = torch.load("saved_models/" + head_prefix + "_DAT_best_generator.pth") # load generator weight
+            else:
+                print("There is no best weight exists!")
+            self.lowest_teacher_generator_loss = min(self.lowest_teacher_generator_loss, checkpoint_g["lowest_teacher_generator_weight"] )
+            print("The lowest teacher generator loss at the beginning is ", self.lowest_teacher_generator_loss)
+        else:
+            print(f"No saved_models/"+teacher_head+"_generator.pth " or " saved_models/"+teacher_head+"_discriminator.pth exists")
+
+        print(f"We will start from the iteration {self.start_iteration}")
 
     def save_weight(self, iteration, name, opt):
 
@@ -342,10 +534,40 @@ class train_master(object):
                     'optimizer_state_dict': self.optimizer_d.state_dict(),
                     }, "saved_models/" + name + "_discriminator.pth")
 
+    def save_weight_student(self, iteration, name, opt):
+
+        # Generator
+        torch.save({
+                'iteration': iteration,
+                'model_state_dict':  self.student_generator.state_dict(),
+                'optimizer_state_dict': self.student_optimizer_g.state_dict(),
+                'lowest_generator_weight': self.lowest_student_generator_loss,
+                'opt': opt,
+                }, "saved_models/" + name + "_student_generator.pth")
+        # 'pixel_loss': self.weight_store["pixel_loss"], 
+        # 'perceptual_loss': self.weight_store['perceptual_loss'],
+        # 'gan_loss': self.weight_store["gan_loss"],
+    def save_weight_teacher(self, iteration, name, opt):
+        # Generator
+        torch.save({
+                'iteration': iteration,
+                'model_state_dict':  self.teacher_generator.state_dict(),
+                'optimizer_state_dict': self.teacher_optimizer_g.state_dict(),
+                'lowest_generator_weight': self.lowest_teacher_generator_loss,
+                'opt': opt,
+                }, "saved_models/" + name + "_teacher_generator.pth")
+        # 'pixel_loss': self.weight_store["pixel_loss"], 
+        # 'perceptual_loss': self.weight_store['perceptual_loss'],
+        # 'gan_loss': self.weight_store["gan_loss"],
 
     def lowest_tensorboard_report(self, iteration):
         self.writer.add_scalar('Loss/lowest-weight', self.generator_loss, iteration)      
-
+    
+    def lowest_student_tensorboard_report(self, iteration):
+        self.writer.add_scalar('Loss/lowest-student-weight', self.student_generator_loss, iteration)
+    
+    def lowest_teacher_tensorboard_report(self, iteration):
+        self.writer.add_scalar('Loss/lowest-teacher-weight', self.teacher_generator_loss, iteration)
 
     @torch.no_grad()
     def generate_lr(self):

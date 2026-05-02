@@ -12,7 +12,6 @@ root_path = os.path.abspath('.')
 sys.path.append(root_path)
 from opt import opt
 
-
 def storage_manage():
     if not os.path.exists("runs_last/"):
         os.makedirs("runs_last/")
@@ -27,6 +26,8 @@ def parse_args():
     parser.add_argument('--auto_resume_closest', action='store_true')
     parser.add_argument('--auto_resume_best', action='store_true')
     parser.add_argument('--pretrained_path', type = str, default="")
+    parser.add_argument('--pretrained_student_path', type = str, default="")
+    parser.add_argument('--pretrained_teacher_path', type = str, default="")
 
     global args
     args = parser.parse_args()
@@ -100,7 +101,10 @@ def process(options):
     elif options['architecture'] == "CUGAN":
         from train_cugan import train_cugan
         obj = train_cugan(options, args)
-        
+    elif options['architecture'] == "DISTILL":
+        from train_distill import train_distill
+        obj = train_distill(options, args)
+      
     else:
         raise NotImplementedError("This is not a supported model architecture")
 

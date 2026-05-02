@@ -1,0 +1,91 @@
+We are doing the 720p Resize check!
+input_dir = datasets/video_out/, ls = ['Frieren04_0_0.png', 'Frieren04_0_1.png', 'Frieren04_1_0.png', 'Frieren04_1_1.png', 'Frieren04_2_0.png', 'Frieren04_2_1.png', 'Frieren04_3_0.png', 'Frieren04_3_1.png', 'Frieren04_4_0.png', 'Frieren04_4_1.png', 'Frieren04_5_0.png', 'Frieren04_5_1.png', 'Frieren04_6_0.png', 'Frieren04_6_1.png', 'Frieren04_7_0.png', 'Frieren04_7_1.png']
+Frieren04_0_0.png
+Frieren04_0_1.png
+Frieren04_1_0.png
+Frieren04_1_1.png
+Frieren04_2_0.png
+Frieren04_2_1.png
+Frieren04_3_0.png
+Frieren04_3_1.png
+Frieren04_4_0.png
+Frieren04_4_1.png
+Frieren04_5_0.png
+Frieren04_5_1.png
+Frieren04_6_0.png
+Frieren04_6_1.png
+Frieren04_7_0.png
+Frieren04_7_1.png
+The total resize num is  0
+We are cropping the image for 4x scale such that it is suitable for video compression
+sanity check pass, opt architecture is DISTILL
+We are handling Strong USM sharpening on hand-drawn line for Anime images!
+Submitted all jobs!
+sanity check pass, opt architecture is DISTILL
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_7_1.png
+Finish all program
+sanity check pass, opt architecture is DISTILL
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_4_1.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_5_0.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_5_1.png
+Finish all program
+sanity check pass, opt architecture is DISTILL
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_6_0.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_6_1.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_7_0.png
+Finish all program
+sanity check pass, opt architecture is DISTILL
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_0_0.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_0_1.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_1_0.png
+Finish all program
+sanity check pass, opt architecture is DISTILL
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_3_0.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_3_1.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_4_0.png
+Finish all program
+sanity check pass, opt architecture is DISTILL
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_1_1.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_2_0.png
+We are processing  datasets/APISR_720p_4xcrop/Frieren04_2_1.png
+Finish all program
+input folders have  ['datasets/APISR_720p_4xcrop']
+Folder datasets/train_hr already exists. Program will delete this folder!
+datasets/APISR_720p_4xcrop 1
+11 datasets/APISR_720p_4xcrop/Frieren04_0_0.png
+21 datasets/APISR_720p_4xcrop/Frieren04_0_1.png
+31 datasets/APISR_720p_4xcrop/Frieren04_1_0.png
+41 datasets/APISR_720p_4xcrop/Frieren04_1_1.png
+51 datasets/APISR_720p_4xcrop/Frieren04_2_0.png
+61 datasets/APISR_720p_4xcrop/Frieren04_2_1.png
+71 datasets/APISR_720p_4xcrop/Frieren04_3_0.png
+81 datasets/APISR_720p_4xcrop/Frieren04_3_1.png
+91 datasets/APISR_720p_4xcrop/Frieren04_4_0.png
+101 datasets/APISR_720p_4xcrop/Frieren04_4_1.png
+111 datasets/APISR_720p_4xcrop/Frieren04_5_0.png
+121 datasets/APISR_720p_4xcrop/Frieren04_5_1.png
+131 datasets/APISR_720p_4xcrop/Frieren04_6_0.png
+141 datasets/APISR_720p_4xcrop/Frieren04_6_1.png
+151 datasets/APISR_720p_4xcrop/Frieren04_7_0.png
+161 datasets/APISR_720p_4xcrop/Frieren04_7_1.png
+All processes done.
+input folders have  ['APISR_sharpen_tmp']
+Folder datasets/train_hr_enhanced already exists. Program will delete this folder!
+APISR_sharpen_tmp 1
+11 APISR_sharpen_tmp/Frieren04_0_0.png
+21 APISR_sharpen_tmp/Frieren04_0_1.png
+31 APISR_sharpen_tmp/Frieren04_1_0.png
+41 APISR_sharpen_tmp/Frieren04_1_1.png
+51 APISR_sharpen_tmp/Frieren04_2_0.png
+61 APISR_sharpen_tmp/Frieren04_2_1.png
+71 APISR_sharpen_tmp/Frieren04_3_0.png
+81 APISR_sharpen_tmp/Frieren04_3_1.png
+91 APISR_sharpen_tmp/Frieren04_4_0.png
+101 APISR_sharpen_tmp/Frieren04_4_1.png
+111 APISR_sharpen_tmp/Frieren04_5_0.png
+121 APISR_sharpen_tmp/Frieren04_5_1.png
+131 APISR_sharpen_tmp/Frieren04_6_0.png
+141 APISR_sharpen_tmp/Frieren04_6_1.png
+151 APISR_sharpen_tmp/Frieren04_7_0.png
+161 APISR_sharpen_tmp/Frieren04_7_1.png
+All processes done.

@@ -27,17 +27,17 @@ def load_rrdb(generator_weight_PATH, scale, print_options=False):
     if 'params_ema' in checkpoint_g:
         # For official ESRNET/ESRGAN weight
         weight = checkpoint_g['params_ema']
-        generator = RRDBNet(3, 3, scale=scale)    # Default blocks num is 6     
+        generator = RRDBNet(3, 3, scale=scale, num_block=3)    # Default blocks num is 6     
 
     elif 'params' in checkpoint_g:
         # For official ESRNET/ESRGAN weight
         weight = checkpoint_g['params']
-        generator = RRDBNet(3, 3, scale=scale)          
+        generator = RRDBNet(3, 3, scale=scale, num_block=3)          
 
     elif 'model_state_dict' in checkpoint_g:
         # For my personal trained weight
         weight = checkpoint_g['model_state_dict']
-        generator = RRDBNet(3, 3, scale=scale)          
+        generator = RRDBNet(3, 3, scale=scale, num_block=3)          
 
     else:
         print("This weight is not supported")

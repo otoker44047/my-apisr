@@ -200,18 +200,18 @@ def main():
     import time
     
     # We use RRDB 6 Blocks by default
-    model = RRDBNet(3, 3, scale=2).cuda()
+    model = RRDBNet(3, 3, scale=4)
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of parameters {num_params / 10 ** 6: 0.2f}")
-
+    print(model)
 
     # Count the number of FLOPs to double check
     with torch.no_grad():
-        input = torch.randn((1, 3, 256, 256)).cuda()
+        input = torch.randn((1, 3, 256, 256))
         output = model(input)   # Calculate for the first time to avoid initial time delay
 
         start = time.time()
-        for _ in range(20):     # Take the average of 20 times
+        for _ in range(3):     # Take the average of 20 times
             output = model(input)
         print("output size is ", output.shape)
         total_time = time.time() - start

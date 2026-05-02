@@ -21,7 +21,9 @@ if __name__ == "__main__":
 
     scale = 4
     num = 0
+    print('input_dir = {}, ls = {}'.format(input_dir, os.listdir(input_dir)))
     for file_name in sorted(os.listdir(input_dir)):
+        print(file_name)
         source_path = os.path.join(input_dir, file_name)
         destination_path = os.path.join(store_dir, file_name)
         img = cv2.imread(source_path)

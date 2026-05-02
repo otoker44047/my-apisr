@@ -40,7 +40,7 @@ class MPEG4():
         preset = random.choices(opt['mpeg4_preset_mode2'], opt['mpeg4_preset_prob2'])[0]
 
         # Encode
-        ffmpeg_encode_cmd = "ffmpeg -i " + temp_input_path + "/%d.png -vcodec libxvid -qscale:v " + quality + " -preset " + preset + " -pix_fmt yuv420p " + video_store_dir + " -loglevel 0"
+        ffmpeg_encode_cmd = "ffmpeg -i " + temp_input_path + "/%d.png -vcodec mpeg4 -qscale:v " + quality + " -preset " + preset + " -pix_fmt yuv420p " + video_store_dir + " -loglevel 0"
         os.system(ffmpeg_encode_cmd)
         
 

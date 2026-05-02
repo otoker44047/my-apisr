@@ -4,10 +4,12 @@ import os
 
 opt = {}
 ##################################################### Frequently Changed Setting ###########################################################
-opt['description'] = "4x_GRL_paper"        # Description to add to the log  
+opt['description'] = "4x_DISTILL_ESRGAN"        # Description to add to the log  
 
-opt['architecture'] = "GRL"                # "ESRNET" || "ESRGAN" || "GRL" || "GRLGAN" (GRL only support 4x) || "DAT" || "DATGAN"
-
+#opt['architecture'] = "ESRNET"                # "ESRNET" || "ESRGAN" || "GRL" || "GRLGAN" (GRL only support 4x) || "DAT" || "DATGAN" 
+opt['architecture'] = "ESRGAN"
+#opt['student_architecture'] = "ESRNET"
+#opt['teacher_architecture'] = "DAT"
 
 # Essential Setting
 opt['scale'] = 4                                                    # In default, this is 4x
@@ -41,7 +43,7 @@ opt['decay_gamma'] = 0.5    # Decay the learning rate per decay_iteration
 # Miscellaneous Setting
 opt['degradate_generation_freq'] = 1     # How frequent we degradate HR to LR (1: means Real-Time Degrade) [No need to change this]
 opt['train_dataloader_workers'] = 5      # Number of workers for DataLoader
-opt['checkpoints_freq'] = 50             # frequency to store checkpoints in the folder (unit: epoch)
+opt['checkpoints_freq'] = 30             # frequency to store checkpoints in the folder (unit: epoch)
 
 #############################################################################################################################################
 
@@ -90,7 +92,6 @@ elif opt['architecture'] == "GRLGAN":        # L1 + Preceptual + Discriminator L
 
 
 elif opt['architecture'] == "ESRNET":
-    
     # Setting for ESRNET Training 
     opt['ESR_blocks_num'] = 6                # How many RRDB blocks you need
     opt['train_iterations'] = 500000         # Training Iterations (500K for large resolution large dataset overlap training)
@@ -101,16 +102,18 @@ elif opt['architecture'] == "ESRNET":
     opt['decay_iteration'] = 100000          # Decay iteration  
     opt['double_milestones'] = []            # Iteration based time you double your learning rate
 
+
 elif opt['architecture'] == "ESRGAN":
     
     # Setting for ESRGAN Training 
-    opt['ESR_blocks_num'] = 6                # How many RRDB blocks you need
-    opt['train_iterations'] = 200000         # Training Iterations
+    #opt['ESR_blocks_num'] = 6                # How many RRDB blocks you need
+    opt['ESR_blocks_num'] = 3
+    opt['train_iterations'] = 100000         # Training Iterations
     opt['train_batch_size'] = 32             #      
     
     # Learning Rate
     opt["start_learning_rate"] = 0.0001     # Training Epoch, use the as Real-ESRGAN: 0.0001 - 0.0002 is ok, based on your need
-    opt['decay_iteration'] = 100000         # Fixed decay gap
+    opt['decay_iteration'] = 50000         # Fixed decay gap
     opt['double_milestones'] = []           # Just put this empty
     
     # Perceptual loss
@@ -198,6 +201,19 @@ elif opt['architecture'] == "CUGAN":
     # GAN loss
     opt["discriminator_type"] = "PatchDiscriminator"        # "PatchDiscriminator" || "UNetDiscriminator" 
     opt["gan_loss_weight"] = 0.2    
+elif opt['architecture'] == "DISTILL":
+    # Setting for DISTILL ESR & DAT Training
+    opt['ESR_blocks_num'] = 3
+    opt['model_size'] = "small"              # "light" || "small"
+    
+    opt['train_iterations'] = 100000         # Training Iterations
+    opt['train_batch_size'] = 12             # For 4x, light can have 32 batch size; small can have    batch size
+    
+    # Learning Rate
+    opt["start_learning_rate"] = 0.00001      # Training Epoch, use the as Real-ESRGAN: 0.0001 - 0.0002 is ok, based on your need
+    opt['decay_iteration'] = 20000          # Decay iteration  
+    opt['double_milestones'] = []            # Iteration based time you double your learning rate (Just ignore this one)
+    print("sanity check pass, opt architecture is DISTILL")
 
     
 else:
